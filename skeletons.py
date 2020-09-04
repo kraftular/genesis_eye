@@ -8,10 +8,12 @@ from openpose_pipeline.common import estimate_pose, draw_humans, preprocess
 
 
 #from the tensorflow docs: (https://www.tensorflow.org/guide/migrate)
-# """There is no straightforward way to upgrade a raw Graph.pb file to TensorFlow 2.0.
+# """There is no straightforward way to upgrade a raw Graph.pb file to
+#    TensorFlow 2.0.
 #    Your best bet is to upgrade the code that generated the file."""
 #hey, thanks a lot.
-#"""But, if you have a "Frozen graph" (a tf.Graph where the variables have been turned
+#"""But, if you have a "Frozen graph" (a tf.Graph where the variables
+#   have been turned
 #   into constants), then it is possible to convert this to a concrete_function using
 #   v1.wrap_function:"""
 #ok, let's try that.
@@ -42,14 +44,15 @@ class HumanPoseEstimator(object):
         #     return_elements=['inputs:0',
         #                      'Mconv7_stage6_L2/BiasAdd:0',
         #                      'Mconv7_stage6_L1/BiasAdd:0'])
-        #self._model = tf.keras.Model(inputs=self.inputs,outputs=[self.heatmaps_tensor,
+        #self._model = tf.keras.Model(inputs=self.inputs,outputs=
+        #                                                     [self.heatmaps_tensor,
         #                                                         self.pafs_tensor])
         #the above can't be done :( and looks like the tf authors have abandoned us.
         
         self.graph_func = wrap_frozen_graph(graph_def,
                                        inputs="inputs:0",
                                        outputs=['Mconv7_stage6_L2/BiasAdd:0',
-                                                'Mconv7_stage6_L1/BiasAdd:0'])        
+                                                'Mconv7_stage6_L1/BiasAdd:0'])      
         self.input_width=input_width
         self.input_height=input_height
         
@@ -61,9 +64,10 @@ class HumanPoseEstimator(object):
 
         returns: heatmaps, pafs
         """
-        #TODO this can be made more efficient by replaceing preprocess() with math that
-        #works with 4-dimensional tensors.
-        imgs = [preprocess(img,self.input_width,self.input_height) for img in imgs]#see note above
+        #TODO this can be made more efficient by replaceing preprocess() with math
+        #that works with 4-dimensional tensors.
+        imgs = [preprocess(img,self.input_width,self.input_height) for img in imgs]
+                                                                    #see note above
         imgs = np.concatenate(imgs,axis=0)#see note above
         imgs = tf.constant(imgs,dtype="float32")
         heatMat,pafMat=self.graph_func(imgs)
