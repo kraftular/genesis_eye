@@ -15,8 +15,9 @@ CV_CAMERA_PRODUCT_NAME="HD Pro Webcam C920"#change this if you can't get an
 #
 #$ /bin/udevadm info --name=/dev/videoFOO |grep ID_V4L_PRODUCT
 
-POWER_LINE_FREQUENCY = "60 Hz"#used by camera firmware, not us. other valid values are "50 Hz" or
-                              #"Disabled".
+POWER_LINE_FREQUENCY = "60 Hz"#used by camera firmware, not us.
+#other valid values are "50 Hz" or
+#"Disabled".
 
 def get_cv_webcams():
     video_devs = glob("/dev/video*")
@@ -45,7 +46,8 @@ class CamCtl(object):
         else:
             raise ValueError(webcam)
         self.controls = {}
-        ctrl_lines = subprocess.run(("v4l2-ctl --device=%s --list-ctrls-menus"%self.device).split(),
+        ctrl_lines = subprocess.run(("v4l2-ctl --device=%s --list-ctrls-menus"
+                                     %self.device).split(),
                                     stdout=subprocess.PIPE).stdout.decode('utf-8')\
                                .strip().split('\n')
         self.controls = {}
@@ -76,17 +78,21 @@ class CamCtl(object):
         if ctrl['type']=='menu':
             val = ctrl['menu'][val]
         val = str(val)
-        cmd_out = subprocess.run(("v4l2-ctl --device=%s --set-ctrl=%s=%s"%(self.device,
-                                                                           key,
-                                                                           val)).split(),
-                                 stdout=subprocess.PIPE).stdout.decode('utf-8').strip()
+        cmd_out = subprocess.run(("v4l2-ctl --device=%s --set-ctrl=%s=%s"
+                                  %(self.device,
+                                    key,
+                                    val)).split(),
+                                 stdout=subprocess.PIPE
+        ).stdout.decode('utf-8').strip()
         if cmd_out:
             raise ValueError(cmd_out)
         return self.get(key)
     def get(self,key):
-        cmd_out = subprocess.run(("v4l2-ctl --device=%s --get-ctrl=%s"%(self.device,
-                                                                           key)).split(),
-                                 stdout=subprocess.PIPE).stdout.decode('utf-8').strip()
+        cmd_out = subprocess.run(("v4l2-ctl --device=%s --get-ctrl=%s"
+                                  %(self.device,
+                                    key)).split(),
+                                 stdout=subprocess.PIPE
+        ).stdout.decode('utf-8').strip()
         if not cmd_out.startswith(key):
             raise ValueError(cmd_out)
         v = cmd_out.split(": ")[1]
