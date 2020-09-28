@@ -40,7 +40,7 @@ RUN git clone https://github.com/kraftular/tf2-pose-estimation.git
 RUN apt-get update -y && apt-get install --no-install-recommends python3 python3-pip -y && \
     python3 /get_python_api.py && \
     python3 -m pip install --upgrade pip && \
-    python3 -m pip install numpy opencv-python tqdm tables tensorflow_hub *.whl --use-feature=2020-resolver && \
+    python3 -m pip install numpy opencv-python tqdm tables filterpy tensorflow_hub *.whl --use-feature=2020-resolver && \
     cd /tf2-pose-estimation && python3 -m pip install . && cd / && \
     apt-get install hdf5-tools -y && \
     apt-get remove --purge git -y && \
