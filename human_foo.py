@@ -12,6 +12,7 @@ from enum import Enum
 import numpy as np
 from coco import coco
 from util import shape_assert, _np, unbatch, assert_same_len
+import filtering
 
 
 class Part(Enum):
@@ -67,8 +68,7 @@ Colors = [[255, 0, 0], #nose
           [0, 170, 255], #rankle
          ]
 
-
-def draw_human(img,joint_vect,confidence_vect,thresh=0.2,copy=False):
+def draw_human(img,joint_vect,confidence_vect,thresh=0.4,copy=False):
     if copy:
         img = img.copy()
     if img.shape[0]==1:
@@ -77,6 +77,7 @@ def draw_human(img,joint_vect,confidence_vect,thresh=0.2,copy=False):
         joint_vect = joint_vect[0,...]
     if confidence_vect.shape[0]==1:
         confidence_vect = confidence_vect[0,...]
+        
     image_h,image_w = img.shape[0:2]
     centers = {}
     for i in range(Part.Background.value):
@@ -165,6 +166,23 @@ def skel_dist(point_thresh,
     #print("match_ratio",match_ratio)
     return 1.0-match_ratio
 
+def hit_test(box,point):
+    shape_assert(box,[4])
+    shape_assert(point,[2])
+    ymin,xmin,ymax,xmax = box
+    y,x = point
+    return (ymin <= y <= ymax) and (xmin <= x <= xmax)
+
+def median_skel_dist(skelA,skelB):
+    """
+    when noise is less of an issue, find the dist between two vects of skel
+    joint positions, as the median distance between corresponding points
+    """
+    #epsilon = 1e-6
+    euc = np.sqrt(np.sum(np.square(skelA-skelB),axis=-1))
+    #return np.median(euc[euc>epsilon])
+    return np.median(euc)
+
 def is_duplicate_skeleton(skelA,skelA_scores,skelB,skelB_scores,point_dist_thresh,
                           total_dist_thresh=0.5):
     dist = skel_dist(point_dist_thresh,
@@ -243,9 +261,9 @@ def box_fits_skel(box,skel):
                   (skelx<=xmax))
     return res
 
-def get_box_from_skel(skel):
-    skely = skel[:,0]
-    skelx = skel[:,1]
+def get_box_from_skel(skel,scores,t):
+    skely = skel[:,0][scores>t]
+    skelx = skel[:,1][scores>t]
     ymin = np.min(skely)
     ymax = np.max(skely)
     xmin = np.min(skelx)
@@ -271,9 +289,27 @@ def get_best_box_for_skel(skel,skel_score,boxes,scores):
                 best_score=score
                 best_box = box
     if best_box is None:
-        best_box = get_box_from_skel(skel)
+        best_box = get_box_from_skel(skel,skel_score,t=0.05)
         best_score = skeleton_value(skel_score,cutoff=0)
     return best_box,best_score
+
+def remove_skel_joints_outside_box(skels,skel_scores,boxes):
+    """
+    this doesn't do much bc the boxes depend heavily on 
+    skeleton joints.
+    """
+    shape_assert(skels,[1,None,17,2])
+    shape_assert(skel_scores,[1,None,17])
+    shape_assert(boxes,[1,None,4])
+    skels,skel_scores,boxes = [
+        unbatch(arg).copy() for arg in (skels,skel_scores,boxes)]
+    assert_same_len(skels,skel_scores,boxes)
+    for i in range(len(skels)):
+        for j in range(len(skels[i])):
+            point = skels[i][j]
+            if not hit_test(boxes[i],point):
+                skel_scores[i][j]=0
+    return skel_scores[np.newaxis,...]
 
 def reset_person_detections(classes,
                             detection_boxes,
@@ -318,11 +354,14 @@ def reset_person_detections(classes,
     return detection_boxes[np.newaxis,...],detection_scores[np.newaxis,...]
 
 class SkeletonTracker(object):
-    SKEL_DIST_T = 0.5 #frac of valid points mismatching to still consider match
+    #SKEL_DIST_T = 0.5 #frac of valid points mismatching to still consider match
+    SKEL_DIST_T = 0.2#median dist as fraction of image dim
     FRAMES_TO_FORGET = 60 #after which we forget a person id, even if it might match
+    IMPOSSIBLE_MOVEMENT_THRESH = 0.2 #not allowed to move this far between frames
     def __init__(self):
         self.tracks = {}#{id:{frame_num: (skel,scores,bbox,bbox_score)}}
         self.last_skels = {}#{id:(skel,scores,last_frame_seen)}
+        self.sks = {}#{id: skel 2d Kalman filter apparatus}
         self.frame_counter=0
         self.person_counter=0
 
@@ -357,17 +396,31 @@ class SkeletonTracker(object):
             #print("len(last_skels)",len(self.last_skels))
             for (pid,(lskel,lscores,lframe)) in self.last_skels.items():
                 if self.frame_counter-lframe < self.FRAMES_TO_FORGET:
-                    dist = skel_dist(
-                        point_dist_thresh,
-                        720,1280,
-                        #^look the other way, these don't matter quite so much
-                        skeleton,scores,
-                        lskel,lscores)
+                    #dist = skel_dist(
+                    #    point_dist_thresh,
+                    #    720,1280,
+                    #    #^look the other way, these don't matter quite so much
+                    #    skeleton,scores,
+                    #    lskel,lscores)
+                    dist = median_skel_dist(skeleton,lskel)
                     #print("pid",pid,"dist",dist)
                     if dist < mindist:
                         mindist = dist
                         closest_pid = pid
             if mindist < self.SKEL_DIST_T:
+
+                if len(self.tracks[closest_pid]) >= 10: #give kalman filter time to
+                    #catch up!
+                    skeleton,scores = self.prune_impossible_jumps(
+                        skeleton,scores,
+                        self.last_skels[closest_pid][0],#last seen skel
+                        self.frame_counter - self.last_skels[closest_pid][2]
+                        #^--frame diff
+                    )
+
+                sk = self.sks[closest_pid]
+                skeleton,scores = sk(skeleton,scores)#apply kalman filtering
+                #independently to skel joints, receive updated joints, confidence
                 
                 self.last_skels[closest_pid] = (skeleton,scores,self.frame_counter)
                 self.tracks[closest_pid][self.frame_counter] = (
@@ -378,6 +431,9 @@ class SkeletonTracker(object):
             else:
                 #new person seen
                 #print ("new person",self.person_counter)
+                self.sks[self.person_counter] = filtering.Pointwise2DSkelKF()
+                skeleton,scores = self.sks[self.person_counter](skeleton,scores)
+                
                 self.last_skels[self.person_counter] = (skeleton,
                                                         scores,
                                                         self.frame_counter)
@@ -390,11 +446,26 @@ class SkeletonTracker(object):
                 self.person_counter += 1
         self.frame_counter +=1
 
+    def prune_impossible_jumps(self,
+                               new_skel,
+                               new_scores,
+                               old_skel,
+                               frame_diff):
+        for i in range(len(new_skel)):
+            p2 = new_skel[i]
+            p1 = old_skel[i]
+            dist = np.sqrt(np.sum(np.square(p2-p1)))
+            if dist > self.IMPOSSIBLE_MOVEMENT_THRESH*frame_diff:
+                new_skel[i,:]=p1
+                new_scores[i] *= 0.5**frame_diff
+        return new_skel,new_scores
+
     def forget(self,person_id):
         """
         force stop tracking of person_id. a new id will be generated
         """
         del self.last_skels[person_id]
+        del self.sks[person_id]
 
     def get_tracked(self):
         out = {}
