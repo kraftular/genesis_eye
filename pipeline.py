@@ -477,7 +477,8 @@ def playback_test6():
     #svo='hug-1.svo'
     #svo = 'depressed-drink-1.svo'
     #svo = 'dance-headbutt-1.svo'
-    svo = 'read-take-1.svo'
+    #svo = 'read-take-1.svo'
+    svo = 'wave-1.svo'
     h5file = vproc.get_hdf5_for_svo(svo)
     vproc.print_channels(h5file)
     from models import load
@@ -547,10 +548,10 @@ def playback_test6point5():
     #svo = 'HD720_SN27165053_16-29-04.svo'
     #svo='hug-1.svo'
     #svo = 'depressed-drink-1.svo'
-    svo = 'dance-headbutt-1.svo'
+    #svo = 'dance-headbutt-1.svo'
     #svo = 'wave-1.svo'
-    #svo = 'give-book-2.svo'
-    svo = 'read-take-1.svo'
+    svo = 'give-book-2.svo'
+    #svo = 'read-take-1.svo'
     h5file = vproc.get_hdf5_for_svo(svo)
     vproc.print_channels(h5file)
     from models import load
@@ -585,6 +586,11 @@ def playback_test6point5():
             detection_scores,
             detection_keypoints,
             detection_keypoint_scores)
+
+        #detection_keypoint_scores = human_foo.remove_skel_joints_outside_box(
+        #    detection_keypoints,
+        #    detection_keypoint_scores,
+        #    detection_boxes)
         
         
         height,width = left_image.shape[0:2]
