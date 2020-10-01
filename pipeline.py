@@ -12,7 +12,7 @@ import gc
 from coco import coco
 
 
-DEBUG=True
+DEBUG=False
 
 if DEBUG:
     logging.basicConfig(level=logging.DEBUG)
@@ -237,6 +237,18 @@ class GlobalSegmentation(object):
 
     def __call__(self,svo):
         self.process_svo(svo)
+        
+
+class StoreCameraConfig(object):
+    def process_svo(self,svo):
+        from zed_geometry import extract_params
+        path = vproc.get_svo_path(svo)
+        camera_info = extract_params(path)
+        h5file = vproc.get_hdf5_for_svo(svo)
+        vproc.store_array_object('camera_info',camera_info,h5file)
+    def __call__(self,svo):
+        self.process_svo(svo)
+        
 
 def extract_zed_images(svo_files):
     def extractor(zed):
@@ -614,9 +626,63 @@ def playback_test6point5():
         imshow('display',disp)
     vproc.playback_h5file(h5file,processor)
 
-
-
 def playback_test7():
+    svo = 'HD720_SN27165053_16-29-04.svo'
+    #svo='hug-1.svo'
+    #svo = 'depressed-drink-1.svo'
+    #svo = 'dance-headbutt-1.svo'
+    #svo = 'wave-1.svo'
+    #svo = 'give-book-2.svo'
+    #svo = 'read-take-1.svo'
+    h5file = vproc.get_hdf5_for_svo(svo)
+    vproc.print_channels(h5file)
+    from models import load
+    import tensorflow as tf
+    from tf2_pose.estimator import TfPoseEstimator
+    from tf2_pose.networks import get_graph_path
+    st = human_foo.SkelTracker3D()
+    def processor(left_image,
+                  left_refined_detection_boxes,
+                  left_refined_detection_classes,
+                  left_refined_detection_scores,
+                  left_refined_detection_keypoints,
+                  left_refined_detection_keypoint_scores,
+                  
+                  right_image,
+                  right_refined_detection_boxes,
+                  right_refined_detection_classes,
+                  right_refined_detection_scores,
+                  right_refined_detection_keypoints,
+                  right_refined_detection_keypoint_scores,
+
+                  camera_info
+                  
+    ):
+
+        process(left_image,
+
+                (left_refined_detection_classes,
+                 left_refined_detection_boxes,
+                 left_refined_detection_scores,
+                 left_refined_detection_keypoints,
+                 left_refined_detection_keypoint_scores),
+                  
+                (right_refined_detection_classes,
+                 right_refined_detection_boxes,
+                 right_refined_detection_scores,
+                 right_refined_detection_keypoints,
+                 right_refined_detection_keypoint_scores),
+
+                camera_info
+                )
+    def process(img,left_args,right_args,camera_info):
+        
+        st.update(left_args,right_args)
+        
+        imshow('frame',img)
+    vproc.playback_h5file(h5file,processor,array_args=['camera_info'])
+
+def playback_test_overlay():
     #svo = 'HD720_SN27165053_16-29-04.svo'
     #svo='hug-1.svo'
     #svo = 'depressed-drink-1.svo'
@@ -702,13 +768,14 @@ def preprocess(svo_filenames):
     #          GlobalSegmentation,
     #          ]
     stages = [
-        RefineDetections,
+        #RefineDetections,
+        StoreCameraConfig,
         ]
     pipeline(stages,svo_filenames)
 
 if __name__=='__main__':
 
-    #svos = [#'HD720_SN27165053_16-29-04.svo',
+    #svos = ['HD720_SN27165053_16-29-04.svo']
     #        'hug-1.svo',
     #        'depressed-drink-1.svo']
     #preprocess(svos)
@@ -719,4 +786,5 @@ if __name__=='__main__':
     #s = GlobalSegmentation()
     #s.process_svo('HD720_SN27165053_16-29-04.svo')
     #playback_test6()
-    playback_test6point5()
+    #playback_test6point5()
+    playback_test7()

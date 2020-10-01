@@ -62,6 +62,16 @@ def recreate_earray(where,name,np_example,h5file,complib,complevel,overwrite):
                                   filters=filters)
     return earray
 
+def store_array_object(name,array,h5file):
+    where = '/'+OBJ_GROUP
+    exist_nodes = h5file.list_nodes(where)
+    if any(node.name==name for node in exist_nodes):
+        logging.warning("overwriting existant constant-length object %s"%name)
+        h5file.remove_node(where,name)
+        h5file.flush()
+    return h5file.create_array(where,name,obj=array)
+    
+
 def initialize_earrays(d,h5file,complib,complevel,overwrite):
     return {name:recreate_earray('/'+FDATA_GROUP,name,d[name],h5file,
                                  complib=complib,complevel=complevel,
@@ -177,9 +187,15 @@ def print_channels(h5file):
     
     
 def get_array(h5file,name):
-    where = '/%s/'%FDATA_GROUP
-    earray = h5file.get_node(where,name,classname='EArray')
-    return earray
+    try:
+        where = '/%s/'%FDATA_GROUP
+        earray = h5file.get_node(where,name,classname='EArray')
+        return earray
+    except tables.exceptions.NoSuchNodeError:
+        #try getting it from objects table
+        where = '/%s/'%OBJ_GROUP
+        array = h5file.get_node(where,name)
+        return array
 
 def get_max_array_len(h5file):
     where = '/%s/'%FDATA_GROUP

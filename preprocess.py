@@ -8,6 +8,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 processing_class_names =[
     'SVOExtractImages',
+    'StoreCameraConfig',
     'DetectionCoCo',
     'GlobalSegmentation',
     'RefineDetections',
