@@ -12,7 +12,7 @@ import gc
 from coco import coco
 
 
-DEBUG=False
+DEBUG=True
 
 if DEBUG:
     logging.basicConfig(level=logging.DEBUG)
@@ -627,11 +627,11 @@ def playback_test6point5():
     vproc.playback_h5file(h5file,processor)
 
 def playback_test7():
-    svo = 'HD720_SN27165053_16-29-04.svo'
+    #svo = 'HD720_SN27165053_16-29-04.svo'
     #svo='hug-1.svo'
     #svo = 'depressed-drink-1.svo'
     #svo = 'dance-headbutt-1.svo'
-    #svo = 'wave-1.svo'
+    svo = 'wave-1.svo'
     #svo = 'give-book-2.svo'
     #svo = 'read-take-1.svo'
     h5file = vproc.get_hdf5_for_svo(svo)
@@ -677,7 +677,7 @@ def playback_test7():
                 )
     def process(img,left_args,right_args,camera_info):
         
-        st.update(left_args,right_args)
+        st.update(left_args,right_args,camera_info)
         
         imshow('frame',img)
     vproc.playback_h5file(h5file,processor,array_args=['camera_info'])

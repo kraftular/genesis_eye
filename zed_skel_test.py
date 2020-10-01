@@ -75,7 +75,7 @@ if gpus:
 #             cv2.putText(img,name,(xmin,ymin), font, 0.5,(255,255,255),2,cv2.LINE_AA)
         
 
-def main():
+def main(svo):
 
     #warm up tensorflow??
     #h = HumanPoseEstimator()
@@ -87,7 +87,7 @@ def main():
 
     print(subprocess.check_output("nvidia-smi").decode('utf-8'))
 
-    print("loading model")
+    #print("loading model")
     #detector = hub.load("https://tfhub.dev/tensorflow/mask_rcnn/inception_resnet_v2_1024x1024/1")#slow
     #detector = hub.load("https://tfhub.dev/tensorflow/ssd_mobilenet_v2/2")#inaccurate
     #detector = hub.load("https://tfhub.dev/tensorflow/faster_rcnn/resnet101_v1_640x640/1")
@@ -102,7 +102,7 @@ def main():
     #detector = detector.signatures['default']
 
 
-    gate = Gate([BatchObjectDetector()])
+    #gate = Gate([BatchObjectDetector()])
 
     def detect(frame):
         out = gate.push(frame)
@@ -138,7 +138,7 @@ def main():
     # Create a InitParameters object and set configuration parameters
 
     input_type = sl.InputType()
-    input_type.set_from_svo_file("~/genesis_eye/videos/HD720_SN27165053_16-29-04.svo")
+    input_type.set_from_svo_file(svo)
     init_params = sl.InitParameters(input_t=input_type, svo_real_time_mode=False)
     init_params.sdk_verbose = False
     init_params.depth_mode = sl.DEPTH_MODE.ULTRA
@@ -197,8 +197,10 @@ def main():
             frame=frame.astype(np.uint8)
             img=frame
 
+            cv2.imshow("test",img)
+
             #imgs = tf.constant(np.array([img]).astype(np.uint8)[...,::-1])
-            imgs = tf.constant(np.array([img]).astype(np.float32)[...,::-1]/255)
+            #imgs = tf.constant(np.array([img]).astype(np.float32)[...,::-1]/255)
 
 
             #print(imgs.shape)
@@ -213,7 +215,7 @@ def main():
 
             #detector_output = detector(imgs)
 
-            out_frame,d = detect(img.astype(np.float32))
+            #out_frame,d = detect(img.astype(np.float32))
 
             
             
@@ -238,10 +240,10 @@ def main():
             #     window = img[a[1]:d[1],a[0]:b[0],:]
             #     window[mask>0] = (0.5*window[mask>0] + 127).astype(np.uint8)
 
-            if d is not None:
-                out_frame = out_frame.astype(np.uint8)
-                annotate(out_frame,d)
-                cv2.imshow("img",out_frame)
+            #if d is not None:
+            #    out_frame = out_frame.astype(np.uint8)
+            #    annotate(out_frame,d)
+            #    cv2.imshow("img",out_frame)
 
             #annotate_oi(img,detector_output)
                 
@@ -348,4 +350,5 @@ coco_blacklist = [
     ]
 
 if __name__=='__main__':
-    main()
+    import sys
+    main(sys.argv[1])

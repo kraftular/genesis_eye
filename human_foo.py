@@ -708,15 +708,15 @@ class SkelTracker3D(object):
             
 
         #sanity check:
-        # z = np.zeros((720,1280,3),dtype=np.uint8)
-        # lskels = left_args[3][0]
-        # lskscores=left_args[4][0]
-        # rskels = right_args[3][0]
-        # rskscores=right_args[4][0]
-        # for i in range(len(lskels)):
-        #     draw_tracked(z,self.left_tracker.get_tracked(),thresh=0.2)
-        #     draw_tracked(z,self.right_tracker.get_tracked(),thresh=0.2)
-        #     cv2.imshow("debug",z)
+        z = np.zeros((720,1280,3),dtype=np.uint8)
+        lskels = left_args[3][0]
+        lskscores=left_args[4][0]
+        rskels = right_args[3][0]
+        rskscores=right_args[4][0]
+        for i in range(len(lskels)):
+            draw_tracked(z,self.left_tracker.get_tracked(),thresh=0.2)
+            draw_tracked(z,self.right_tracker.get_tracked(),thresh=0.2)
+            cv2.imshow("debug",z)
 
         #assert self.left_tracker.frame_count == self.right_tracker.frame_count
         #self.frame_counter = self.left_tracker.frame_counter

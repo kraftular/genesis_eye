@@ -7,11 +7,11 @@ import os
 logging.basicConfig(level=logging.DEBUG)
 
 processing_class_names =[
-    'SVOExtractImages',
+    #'SVOExtractImages',
     'StoreCameraConfig',
-    'DetectionCoCo',
-    'GlobalSegmentation',
-    'RefineDetections',
+    #'DetectionCoCo',
+    #'GlobalSegmentation',
+    #'RefineDetections',
     ]
 
 def process(classname,svo_list):
