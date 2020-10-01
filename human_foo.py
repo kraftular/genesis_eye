@@ -13,6 +13,7 @@ import numpy as np
 from coco import coco
 from util import shape_assert, _np, unbatch, assert_same_len
 import filtering
+from zed_geometry import to_3D
 
 
 class Part(Enum):
@@ -95,7 +96,7 @@ def draw_human(img,joint_vect,confidence_vect,thresh=0.4,copy=False):
                  centers[pair[1]], Colors[pair[0]], 3)
     return img
 
-def draw_tracked(img,track_dict,copy=False,**draw_human_kwargs):
+def draw_tracked(img,track_dict,copy=False,draw_bb=False,**draw_human_kwargs):
     if copy:
         img = img.copy()
     height,width = img.shape[0:2]
@@ -110,10 +111,11 @@ def draw_tracked(img,track_dict,copy=False,**draw_human_kwargs):
         ymax=int(ymax*height)
         xmin=int(xmin*width)
         xmax=int(xmax*width)
-        cv2.line(img,(xmin,ymin),(xmax,ymin),color,2)
-        cv2.line(img,(xmax,ymin),(xmax,ymax),color,2)
-        cv2.line(img,(xmax,ymax),(xmin,ymax),color,2)
-        cv2.line(img,(xmin,ymax),(xmin,ymin),color,2)
+        if draw_bb:
+            cv2.line(img,(xmin,ymin),(xmax,ymin),color,2)
+            cv2.line(img,(xmax,ymin),(xmax,ymax),color,2)
+            cv2.line(img,(xmax,ymax),(xmin,ymax),color,2)
+            cv2.line(img,(xmin,ymax),(xmin,ymin),color,2)
         name = "person id:%d"%pid
         font = cv2.FONT_HERSHEY_SIMPLEX
         cv2.putText(img,name,(xmin,ymin), font, 0.5,(0,0,0),2,cv2.LINE_AA)
@@ -355,9 +357,9 @@ def reset_person_detections(classes,
 
 class SkeletonTracker(object):
     #SKEL_DIST_T = 0.5 #frac of valid points mismatching to still consider match
-    SKEL_DIST_T = 0.2#median dist as fraction of image dim
+    SKEL_DIST_T = 0.15#median dist as fraction of image dim, generous
     FRAMES_TO_FORGET = 60 #after which we forget a person id, even if it might match
-    IMPOSSIBLE_MOVEMENT_THRESH = 0.2 #not allowed to move this far between frames
+    IMPOSSIBLE_MOVEMENT_THRESH = 0.05 #no joint allowed to move this far between frame
     def __init__(self):
         self.tracks = {}#{id:{frame_num: (skel,scores,bbox,bbox_score)}}
         self.last_skels = {}#{id:(skel,scores,last_frame_seen)}
@@ -411,6 +413,7 @@ class SkeletonTracker(object):
 
                 if len(self.tracks[closest_pid]) >= 10: #give kalman filter time to
                     #catch up!
+                    #then, reject skel joints that move too much btw frames.
                     skeleton,scores = self.prune_impossible_jumps(
                         skeleton,scores,
                         self.last_skels[closest_pid][0],#last seen skel
@@ -455,9 +458,10 @@ class SkeletonTracker(object):
             p2 = new_skel[i]
             p1 = old_skel[i]
             dist = np.sqrt(np.sum(np.square(p2-p1)))
+            #print(i,":",dist)
             if dist > self.IMPOSSIBLE_MOVEMENT_THRESH*frame_diff:
-                new_skel[i,:]=p1
-                new_scores[i] *= 0.5**frame_diff
+                #new_skel[i,:]=p1
+                new_scores[i] =0# *= 0.5**frame_diff
         return new_skel,new_scores
 
     def forget(self,person_id):
@@ -471,6 +475,251 @@ class SkeletonTracker(object):
         out = {}
         for (pid,td) in self.tracks.items():
             if self.frame_counter-1 in td:
-                out[pid] = td[self.frame_counter-1]
+                if len(td) > 15: #require half second of tracking, cumulative
+                    #otherwise we output a lot of glitch skeletons.
+                    out[pid] = td[self.frame_counter-1]
         return out
             
+def filter_human(classes,
+                 detection_boxes,
+                 detection_scores,
+                 skeletons,
+                 skeleton_scores):
+    shape_assert(classes,[1,None])
+    shape_assert(detection_boxes,[1,None,4])
+    shape_assert(detection_scores,[1,None])
+    shape_assert(skeletons,[1,None,17,2])
+    shape_assert(skeleton_scores,[1,None,17])
+    (classes,detection_boxes,detection_scores,skeletons,
+     skeleton_scores) = (unbatch(arg).copy() for arg in (classes,
+                                                         detection_boxes,
+                                                         detection_scores,
+                                                         skeletons,
+                                                         skeleton_scores))
+    assert_same_len(classes,detection_boxes,
+                    detection_scores,skeletons,skeleton_scores)
+    mask = classes==coco.index('person')
+    (classes,detection_boxes,detection_scores,skeletons,
+     skeleton_scores) = (arg[mask] for arg in (classes,
+                                               detection_boxes,
+                                               detection_scores,
+                                               skeletons,
+                                               skeleton_scores))
+    (classes,detection_boxes,detection_scores,skeletons,
+     skeleton_scores) = (arg[np.newaxis,...] for arg in (classes,
+                                                         detection_boxes,
+                                                         detection_scores,
+                                                         skeletons,
+                                                         skeleton_scores))
+    return (classes,detection_boxes,detection_scores,skeletons,
+            skeleton_scores)
+
+def align_lr_humans(left_args,right_args):
+    for args in (left_args,right_args):
+        assert np.all(args[0]==coco.index('person'))
+
+    
+    lboxes,lscores,lskels,lskel_scores = (unbatch(arg) for arg in left_args[1:])
+    rboxes,rscores,rskels,rskel_scores = (unbatch(arg) for arg in right_args[1:])
+
+    shape_assert(lboxes,[None,4])
+    shape_assert(lscores,[None])
+    shape_assert(lskels,[None,17,2])
+    shape_assert(lskel_scores,[None,17])
+    shape_assert(rboxes,[None,4])
+    shape_assert(rscores,[None])
+    shape_assert(rskels,[None,17,2])
+    shape_assert(rskel_scores,[None,17])
+
+    assert_same_len(lboxes,lscores,lskels,lskel_scores)
+    assert_same_len(rboxes,rscores,rskels,rskel_scores)
+
+    lmatches = {}#{ridx:(lidx,score)}
+
+    epsilon = 1e-6 #zero testing skel score
+    for i in range(len(lboxes)):
+        lbox,lscore,lskel,lskel_score = (arg[i] for arg in (lboxes,lscores,
+                                                            lskels,lskel_scores))
+        if skeleton_value(lskel_score) < epsilon:
+            continue
+        min_dist = float('inf')
+        for j in range(len(rboxes)):
+            rbox,rscore,rskel,rskel_score = (arg[j] for arg in (rboxes,rscores,
+                                                                rskels,rskel_scores))
+            if skeleton_value(rskel_score) < epsilon:
+                continue
+            dist = median_skel_dist(lskel,rskel)
+            if  dist < min_dist:
+                min_dist = dist
+                if j in lmatches:
+                    k,kdist = lmatches[j]
+                    if dist < k:
+                        lmatches[j] = (i,dist)
+                else:
+                    if dist < SkelTracker3D.MAX_LR_DIST:
+                        lmatches[j] = (i,dist)
+    if not lmatches:
+        zilch = (np.zeros((0,1),dtype = left_args[0].dtype),
+                 np.zeros((0,4),dtype = lboxes.dtype),
+                 np.zeros((0,17,2),dtype = lskels.dtype),
+                 np.zeros((0,17),dtype = lskel_scores.dtype))
+        return zilch,zilch
+    r_idxs,lboop = zip(*lmatches.items())
+    l_idxs,_ = zip(*lboop)
+    
+    lboxes,lscores,lskels,lskel_scores = (arg[list(l_idxs)] for arg in
+                                          (lboxes,lscores,lskels,lskel_scores))
+    rboxes,rscores,rskels,rskel_scores = (arg[list(r_idxs)] for arg in
+                                          (rboxes,rscores,rskels,rskel_scores))
+    lclasses = left_args[0][0,:len(lboxes)]
+    rclasses = right_args[0][0,:len(rboxes)]
+
+    #rebatch
+    lclasses,lboxes,lscores,lskels,lskel_scores = (
+        arg[np.newaxis,...] for arg in (lclasses,lboxes,lscores,lskels,lskel_scores))
+    rclasses,rboxes,rscores,rskels,rskel_scores = (
+        arg[np.newaxis,...] for arg in (rclasses,rboxes,rscores,rskels,rskel_scores))
+
+    return (lclasses,lboxes,lscores,lskels,lskel_scores),\
+        (rclasses,rboxes,rscores,rskels,rskel_scores)
+                                    
+
+def vertical_filter(left_args,right_args):
+    """
+    stereo disparity should be in x only for perfectly calibrated camera,
+    which we can assume this is. drop confidence of misaligned joints, increase
+    confidence of well-aligned joints, and average the y coordinate of all well
+    aligned joints to increase accuracy.
+    """
+    for args in (left_args,right_args):
+        assert np.all(args[0]==coco.index('person'))
+
+    
+    lboxes,lscores,lskels,lskel_scores = (unbatch(arg) for arg in left_args[1:])
+    rboxes,rscores,rskels,rskel_scores = (unbatch(arg) for arg in right_args[1:])
+
+    shape_assert(lboxes,[None,4])
+    shape_assert(lscores,[None])
+    shape_assert(lskels,[None,17,2])
+    shape_assert(lskel_scores,[None,17])
+    shape_assert(rboxes,[None,4])
+    shape_assert(rscores,[None])
+    shape_assert(rskels,[None,17,2])
+    shape_assert(rskel_scores,[None,17])
+
+    assert_same_len(lboxes,lscores,lskels,lskel_scores,
+                    rboxes,rscores,rskels,rskel_scores)
+    N = len(lskels)
+    for i in range(N):
+        l_y = lskels[i,:,0]
+        r_y = rskels[i,:,0]
+        y_abs_diff = np.abs(l_y-r_y)
+        lskel_scores[i,y_abs_diff>SkelTracker3D.VERTICAL_MISALIGN_THRESH] = 0
+        rskel_scores[i,y_abs_diff>SkelTracker3D.VERTICAL_MISALIGN_THRESH] = 0
+        l_y[...] = r_y[...] = (l_y+r_y)/2
+    #no return; modify args in place
+    
+
+def prefilter(detection_classes,
+              detection_boxes,
+              detection_scores,
+              detection_keypoints,
+              detection_keypoint_scores):
+    detection_keypoint_scores = remove_duplicate_skeletons(
+        detection_classes,
+        detection_scores,
+        detection_keypoints,
+        detection_keypoint_scores)
+    detection_keypoint_scores = remove_low_val_skeletons(
+        detection_classes,
+        detection_keypoint_scores)
+    detection_boxes,detection_scores = reset_person_detections(
+        detection_classes,
+        detection_boxes,
+        detection_scores,
+        detection_keypoints,
+        detection_keypoint_scores)
+    return (detection_classes,
+            detection_boxes,
+            detection_scores,
+            detection_keypoints,
+            detection_keypoint_scores)
+
+class SkelTracker3D(object):
+    MAX_LR_DIST = 0.05 #max distance (fractional) for stereo skels
+    VERTICAL_MISALIGN_THRESH = 0.02 #max vertical mismatch of l,r joints
+    def __init__(self):
+        self.left_tracker = SkeletonTracker()
+        self.right_tracker = SkeletonTracker()
+        self.frame_counter=0
+        self.person_counter=0
+        self.tracks = {}#{person_id: {frame: 3d_skel, left_2d_id, right_2d_id}}
+        
+
+    def update(self,left_args,right_args,camera_info):
+
+        left_args = prefilter(*left_args)
+        right_args= prefilter(*right_args)
+
+        #remove non-human bounding boxes so we don't waste time iterating
+        left_args,right_args = (filter_human(*args)
+                                for args in (left_args,right_args))
+
+
+        left_args,right_args = align_lr_humans(left_args,right_args)
+        
+        if len(left_args[0])==0:
+            return
+
+        vertical_filter(left_args,right_args)#in-place modify
+
+        #here, could convert to 3D and filter out skeletons with insane bone lengths
+        #leave out for simplicity, unless seems like it'd help...
+        
+        ##sanity check:
+        #lskels = left_args[3][0]
+        #lskscores=left_args[4][0]
+        #rskels = right_args[3][0]
+        #rskscores=right_args[4][0]
+        #assert_same_len(lskels,lskscores,rskels,rskscores)
+        #for i in range(len(lskels)):
+        #    z = np.zeros((720,1280,3),dtype=np.uint8)
+        #    print(lskscores[i],rskscores[i])
+        #    draw_human(z,lskels[i],lskscores[i])
+        #    draw_human(z,rskels[i],rskscores[i])
+        #    cv2.imshow("debug",z)
+        #    cv2.waitKey()
+        
+        self.left_tracker.update(*left_args)
+        self.right_tracker.update(*right_args)
+
+        #debug / demo
+        ll = self.left_tracker.last_skels
+        rl = self.right_tracker.last_skels
+
+        if len(rl)==1 and len(ll) == 1:
+            lskel,lscores,_ = ll[0]
+            rskel,rscores,_ = rl[0]
+            scores = (lscores+rscores)/2
+            s3d = to_3D(lskel,rskel,camera_info)
+            return s3d,scores
+        else:
+            return [],[]
+            
+
+        #sanity check:
+        # z = np.zeros((720,1280,3),dtype=np.uint8)
+        # lskels = left_args[3][0]
+        # lskscores=left_args[4][0]
+        # rskels = right_args[3][0]
+        # rskscores=right_args[4][0]
+        # for i in range(len(lskels)):
+        #     draw_tracked(z,self.left_tracker.get_tracked(),thresh=0.2)
+        #     draw_tracked(z,self.right_tracker.get_tracked(),thresh=0.2)
+        #     cv2.imshow("debug",z)
+
+        #assert self.left_tracker.frame_count == self.right_tracker.frame_count
+        #self.frame_counter = self.left_tracker.frame_counter
+
+        
+                                                                      
