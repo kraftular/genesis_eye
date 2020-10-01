@@ -19,6 +19,7 @@ except ImportError:
     print("python-opengl is missing. try apt-get install python-opengl")
     quit()
 
+import json
 import numpy as np
 import sys
 import inspect
@@ -42,24 +43,27 @@ def draw_skel(skeleton,confidence, thresh=0.4):
         skeleton = skeleton[0,...]
     if confidence.shape[0]==1:
         confidence = confidence[0,...]
-    shape_assert(skeleton,[17,2])
+    shape_assert(skeleton,[17,3])
     shape_assert(confidence,[17])
     centers = {}
+    glColor3fv((0.0,1.0,0.0))
     for i in range(Part.Background.value):
-        if confidence_vect[i]<thresh:continue
-        x,y,z = joint_vect[i,:]
+        if confidence[i]<thresh:continue
+        x,y,z = skeleton[i,:]
+        #print(x,y,z)
         vect = np.array([x,y,z])
         centers[i] = vect
         glPushMatrix()
         glTranslatef(*vect) #move to where we want to put object
         glutSolidSphere(0.05,20,20) # make sphere (radius, res, res)
         glPopMatrix()
+    glColor3fv((1.0,0.0,0.0))
     glBegin(GL_LINES)
     for pair in Pairs:
         if any((pair[i] not in centers) for i in range(2)):
             continue
         for vertex in (centers[i] for i in pair):
-            glVertex3fv(tuple(vects[vertex]))
+            glVertex3fv(vertex)
     glEnd()
 
 
@@ -248,9 +252,12 @@ class Console(Recorder):
                     print("quit")
                     quit()
     def draw(self,skels, confidences):
-        shape_assert(skels,[None,17,2])
-        shape_assert(confidences,[None,17])
-        assert_same_len(skels,confidences)
+        if skels is not None:
+            shape_assert(skels,[None,17,3])
+            shape_assert(confidences,[None,17])
+            assert_same_len(skels,confidences)
+        else:
+            skels,confidences = [],[]
         if self.grid:
             draw_grid(self.grid_pos)
         for skel,c in zip(skels, confidences):
@@ -434,7 +441,13 @@ def main():
         
     def process(img,left_args,right_args,camera_info):
         loop_start = pygame.time.get_ticks()
-        skels,confs = st.update(left_args,right_args)
+        update_out = st.update(left_args,right_args,camera_info)
+        if update_out is None:
+            skels,confs = None,None
+        else:
+            skels,confs = update_out
+            skels = skels[np.newaxis,...]
+            confs = confs[np.newaxis,...]
         for event in pygame.event.get():
             console.processEvent(event)
             

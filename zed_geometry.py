@@ -49,22 +49,29 @@ def extract_params(svo):
                             ])
     return camera_info
 
-def to_3D(left_points,right_points,camera_info):
-    left_x = left_points[...,1]
-    left_y = left_points[...,0]
-    right_x = right_points[...,1]
-    right_y = right_points[...,0]
+def to_3D(left_points,right_points,camera_info,img_dims=(720,1280)):
 
-    dx = left_x - right_x
-
-    avg_y = (left_y+right_y)/2
+    img_h,img_w = img_dims
 
     (baseline,
      flen,
      left_optical_center_y,
      left_optical_center_x,
-     _,
-     _) = camera_info
+     right_optical_center_y,
+     right_optical_center_x) = camera_info
+    
+    
+    left_x = left_points[...,1] *img_w - left_optical_center_x
+    left_y = left_optical_center_y - left_points[...,0] *img_h
+    right_x = right_points[...,1] * img_w - right_optical_center_x
+    right_y = right_optical_center_y - right_points[...,0] * img_h
+
+    dx = (left_x - right_x)
+
+    avg_y = (left_y+right_y)/2
+
+    print("baseline",baseline)
+    print("dx",dx)
 
     z = baseline*flen / dx
 

@@ -669,7 +669,7 @@ class SkelTracker3D(object):
         left_args,right_args = align_lr_humans(left_args,right_args)
         
         if len(left_args[0])==0:
-            return
+            return None
 
         vertical_filter(left_args,right_args)#in-place modify
 
@@ -704,7 +704,7 @@ class SkelTracker3D(object):
             s3d = to_3D(lskel,rskel,camera_info)
             return s3d,scores
         else:
-            return [],[]
+            return None
             
 
         #sanity check:
